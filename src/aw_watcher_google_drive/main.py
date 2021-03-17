@@ -5,7 +5,7 @@ import click
 
 import aw_client
 from aw_core import Event
-import drive_api
+from . import drive_api
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,13 @@ def main(testing: bool):
 
     poll_time = 1
 
+    drive_api_instance = drive_api.DriveApi()
+
     while True:
         sleep(poll_time)
 
-        for fname, data in drive_api.read_all_spreadsheet_data("activitywatch"):
+        for fname, data in drive_api_instance.read_all_spreadsheet_data(
+                "activitywatch-data").items():
             # Create bucket
             bucket_name = fname
             eventtype = "os.hid.input"
@@ -33,4 +36,5 @@ def main(testing: bool):
             # Create events
             for line in data:
                 e = Event(timestamp=line['time'], duration=5, data=line)
-                client.heartbeat(bucket_name, e, queued=False, commit_interval=5)
+                client.heartbeat(
+                    bucket_name, e, queued=False, commit_interval=5)

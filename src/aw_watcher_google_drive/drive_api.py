@@ -1,13 +1,47 @@
 import csv
 import io
+import pickle
+import os.path
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+
+
+def get_credentials(scopes):
+    creds = None
+    # The file token.pickle stores the user's access and refresh tokens, and is
+    # created automatically when the authorization flow completes for the first
+    # time.
+    cred_dir = os.path.expanduser('~/.local/share/activitywatch/')
+    token_filepath = os.path.join(cred_dir, 'token.pickle')
+    if os.path.exists(token_filepath):
+        with open(token_filepath, 'rb') as token:
+            creds = pickle.load(token)
+    # If there are no (valid) credentials available, let the user log in.
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            # Get credentials.json from
+            # https://developers.google.com/drive/api/v3/quickstart/python#step_1_turn_on_the
+            flow = InstalledAppFlow.from_client_secrets_file(
+                os.path.join(os.path.dirname(__file__), 'credentials.json'),
+                scopes)
+            creds = flow.run_local_server(port=0)
+        # Save the credentials for the next run
+        with open(token_filepath, 'wb') as token:
+            pickle.dump(creds, token)
+    return creds
 
 
 class DriveApi(object):
 
-    def __init__(self, creds):
+    def __init__(self):
+        # If modifying scopes, delete the file token.pickle.
+        scopes = ['https://www.googleapis.com/auth/drive.readonly']
+        creds = get_credentials(scopes)
         self.service = build('drive', 'v3', credentials=creds)
 
     def read_files(self, directory):
@@ -22,15 +56,22 @@ class DriveApi(object):
     def read_all_spreadsheet_data(self, directory):
         found_files = self._get_files_for_query(
             f"'{self.get_folder_id(directory)}' in parents")
-        return {file.get('name'): self.get_spreadsheet_data(file.get('id'))
+        return {file.get('name'): self.get_spreadsheet_data(file)
                 for file in found_files}
 
-    def get_spreadsheet_data(self, file_id):
-        request = self.service.files().export_media(
-            fileId=file_id,
-            mimeType='text/csv',
-            exportFormat='csv',
-            gid='0')
+    def get_spreadsheet_data(self, file):
+        print(file)
+        if file['mimeType'] == 'text/comma-separated-values':
+            request = self.service.files().get_media(fileId=file.get('id'))
+        elif file['mimeType'] == 'application/vnd.google-apps.spreadsheet':
+            request = self.service.files().export_media(
+                fileId=file.get('id'),
+                mimeType='text/csv',
+                # exportFormat='csv',
+                # gid='0',
+            )
+        else:
+            raise ValueError(f'File {file} not of supported type.')
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
         done = False
@@ -38,8 +79,8 @@ class DriveApi(object):
             status, done = downloader.next_chunk()
             # print("Downloading file %d%%." % int(status.progress() * 100))
         fh.seek(0)
-        with open(fh, 'r') as csvfile:
-            return [row for row in csv.DictReader(csvfile)]
+        textio = io.TextIOWrapper(fh, encoding='utf-8')
+        return [row for row in csv.DictReader(textio)]
 
     def download_file(self, file_id):
         request = self.service.files().get_media(fileId=file_id)
@@ -77,7 +118,7 @@ class DriveApi(object):
             response = self.service.files().list(
                 q=query,
                 spaces='drive',
-                fields='nextPageToken, files(id, name)',
+                fields='nextPageToken, files(id, name, mimeType)',
                 pageToken=page_token).execute()
             found_files += response.get('files', [])
             page_token = response.get('nextPageToken', None)
