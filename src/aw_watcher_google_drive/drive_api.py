@@ -2,6 +2,7 @@ import csv
 import io
 import pickle
 import os.path
+import logging
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -60,7 +61,7 @@ class DriveApi(object):
                 for file in found_files}
 
     def get_spreadsheet_data(self, file):
-        print(file)
+        logging.info(f'Downloaded {file}')
         if file['mimeType'] == 'text/comma-separated-values':
             request = self.service.files().get_media(fileId=file.get('id'))
         elif file['mimeType'] == 'application/vnd.google-apps.spreadsheet':
