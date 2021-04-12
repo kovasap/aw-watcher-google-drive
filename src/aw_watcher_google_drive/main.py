@@ -27,20 +27,15 @@ def main(testing: bool):
     while True:
         sleep(poll_time)
 
-        for fname, data in drive_api_instance.read_all_spreadsheet_data(
-                'activitywatch-data').items():
-            # Create bucket
-            bucket_name = fname
+        spreadsheet_data = drive_api_instance.read_all_spreadsheet_data(
+            'activitywatch-data')
+
+        for bucket_name, function in parsers.BUCKETS.items():
             eventtype = 'os.hid.input'
             client.create_bucket(bucket_name, eventtype, queued=False)
 
-            events = []
-            for _, parser in inspect.getmembers(parsers, inspect.isfunction):
-                events += parser(fname, data)
-            if not events:
-                logging.warning(f'No parsers able to parse {fname}.')
-            else:
-                for e in events:
-                    client.heartbeat(
-                        bucket_name, e, queued=False, pulsetime=0.0,
-                        commit_interval=5)
+            events = function(spreadsheet_data)
+            for e in events:
+                client.heartbeat(
+                    bucket_name, e, queued=False, pulsetime=0.0,
+                    commit_interval=5)
