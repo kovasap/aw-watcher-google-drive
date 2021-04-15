@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 @click.command()
 @click.option('--testing', is_flag=True)
-def main(testing: bool):
+@click.option('--oneshot', is_flag=True, default=False)
+def main(testing: bool, oneshot: bool):
     sleep(5)  # Without this the watcher will crash if it is started by default
     logging.basicConfig(level=logging.INFO)
     logger.info('Starting watcher...')
@@ -25,10 +26,8 @@ def main(testing: bool):
     drive_api_instance = drive_api.DriveApi()
 
     while True:
-        sleep(poll_time)
-
         spreadsheet_data = drive_api_instance.read_all_spreadsheet_data(
-            'activitywatch-data')
+            'activitywatch-data', only={'servings.csv', 'notes.csv'})
 
         for bucket_name, function in parsers.BUCKETS.items():
             eventtype = 'os.hid.input'
@@ -39,3 +38,8 @@ def main(testing: bool):
                 client.heartbeat(
                     bucket_name, e, queued=False, pulsetime=0.0,
                     commit_interval=5)
+        if oneshot:
+            break
+        else:
+            sleep(poll_time)
+

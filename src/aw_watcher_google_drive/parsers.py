@@ -3,14 +3,7 @@ from datetime import datetime
 from typing import Dict, List
 
 from aw_core import Event
-
-
-BUCKETS = {
-    # 'bitesnap': dict(files=('bitesnap',), function=parse_bitesnap),
-    'nutrition': parse_cronometer_nutrition,
-    # 'weight': dict(files=('biometrics.csv',), function=parse_cronometer_biometrics),
-    # 'blood_glucose': dict(files=('TBD',), function=parse_libre),
- }
+import pytz
 
 
 def parse_bitesnap(filename: str, data: Dict[str, str]) -> List[Event]:
@@ -27,11 +20,11 @@ def parse_bitesnap(filename: str, data: Dict[str, str]) -> List[Event]:
 def _parse_food_timing_note(note: str) -> dict:
     split_note = note['Note'].split(' ')
     data = dict(
-        num_foods=split_note[1],
+        num_foods=int(split_note[1]),
         time=split_note[2],
     )
-    if len(split_note) == 4:
-        data['description'] = split_note[3]
+    if len(split_note) > 3:
+        data['description'] = ' '.join(split_note[3:])
     return data
 
 
@@ -42,30 +35,35 @@ def _get_data_for_day(csv_data):
     return data_by_day
 
 
+def parse_time(time: str) -> datetime:
+    dt = datetime.strptime(time, '%Y-%m-%d %I:%M%p')
+    return dt.astimezone(pytz.timezone('America/Los_Angeles'))
+
+
 def parse_cronometer_nutrition(data_by_fname) -> List[Event]:
     foods_by_day = _get_data_for_day(data_by_fname['servings.csv'])
     notes_by_day = _get_data_for_day(data_by_fname['notes.csv'])
 
     events = []
     for day, foods in foods_by_day.items():
-        foods_iter = iter(foods)
+        foods_iter = iter(f for f in foods if f['Food Name'] != 'Tap Water')
         for note in notes_by_day[day]:
-            if 'eat' not in cur_note['Note']:
+            if not note['Note'].startswith('eat'):
                 continue
-            note_data = _parse_food_timing_note(cur_note)
+            note_data = _parse_food_timing_note(note)
             for _ in range(note_data['num_foods']):
                 events.append(Event(
-                    timestamp=datetime.strptime(f'{day} {note_data["time"]}',
-                                                '%Y-%m-%d %I:%M%p')
+                    timestamp=parse_time(f'{day} {note_data["time"]}'),
                     duration=10 * 60,  # In seconds
                     data=next(foods_iter)))
-        # Assume the rest of the foods were eaten at noon.
+                print(events[-1].timestamp)
+        # Assume the rest of the foods were eaten at midnight.
         for food in foods_iter:
             events.append(Event(
-                timestamp=datetime.strptime(f'{day} 12:00pm',
-                                            '%Y-%m-%d %I:%M%p')
+                timestamp=parse_time(f'{day} 12:00am'),
                 duration=10 * 60,  # In seconds
                 data=food))
+
     return events
 
 
@@ -75,3 +73,11 @@ def parse_cronometer_biometrics(data_by_fname) -> List[Event]:
 
 def parse_libre(data_by_fname) -> List[Event]:
     pass
+
+
+BUCKETS = {
+    # 'bitesnap': dict(files=('bitesnap',), function=parse_bitesnap),
+    'nutrition': parse_cronometer_nutrition,
+    # 'weight': dict(files=('biometrics.csv',), function=parse_cronometer_biometrics),
+    # 'blood_glucose': dict(files=('TBD',), function=parse_libre),
+ }

@@ -54,15 +54,21 @@ class DriveApi(object):
         return {file.get('name'): self.get_file_lines(file.get('id'))
                 for file in found_files}
 
-    def read_all_spreadsheet_data(self, directory):
+    def read_all_spreadsheet_data(self, directory, only=None):
+        """Gets all spreadsheet data from directory.
+
+        If the set only is specified, will only get files whose name appears in
+        the only set.
+        """
         found_files = self._get_files_for_query(
             f"'{self.get_folder_id(directory)}' in parents")
         return {file.get('name'): self.get_spreadsheet_data(file)
-                for file in found_files}
+                for file in found_files
+                if file.get('name') in only or only is None}
 
     def get_spreadsheet_data(self, file):
         logging.info(f'Downloaded {file}')
-        if file['mimeType'] == 'text/comma-separated-values':
+        if file['mimeType'] in {'text/comma-separated-values', 'text/csv'}:
             request = self.service.files().get_media(fileId=file.get('id'))
         elif file['mimeType'] == 'application/vnd.google-apps.spreadsheet':
             request = self.service.files().export_media(
@@ -126,11 +132,3 @@ class DriveApi(object):
             if page_token is None:
                 break
         return found_files
-
-
-if __name__ == "__main__":
-    import credentials
-    creds = credentials.get_credentials([
-        # If modifying scopes, delete the file token.pickle.
-        'https://www.googleapis.com/auth/drive.readonly'])
-    drive_api = DriveApi(creds)
